@@ -3,7 +3,8 @@ import logging
 from typing import Optional, Callable
 
 from .session import SmartSocketSession
-from .host_services import HostServices
+from .default_api import DefaultAPI
+from .routing import App
 from ..transport.device_manager import SingleDeviceManager
 
 logger = logging.getLogger(__name__)
@@ -21,26 +22,26 @@ class AdbServer:
         host: str = "127.0.0.1",
         port: int = 5037,
         *,
-        version_provider: Optional[Callable[[], str]] = None,
+        version_provider: Optional[Callable[[], int]] = None,
+        app: Optional[App] = None,
     ) -> None:
         self._host = host
         self._port = port
         self._server: Optional[asyncio.AbstractServer] = None
         self._stopping = asyncio.Event()
         self._device_manager = SingleDeviceManager()
-        self._host_services = HostServices(
-            version_provider=version_provider,
-            request_shutdown=self.request_shutdown,
-        )
+        self._app = app or App()
+        self._app.register(DefaultAPI(self))
 
     @property
     def is_running(self) -> bool:
-        return self._server is not None and self._server.sockets is not None
+        return self._server is not None and getattr(self._server, "sockets", None) is not None
 
     @property
     def bound_port(self) -> Optional[int]:
-        if self._server and self._server.sockets:
-            return self._server.sockets[0].getsockname()[1]
+        sockets = getattr(self._server, "sockets", None) if self._server else None
+        if sockets:
+            return sockets[0].getsockname()[1]
         return None
 
     async def start(self) -> None:
@@ -67,9 +68,10 @@ class AdbServer:
         self._server = None
 
     def request_shutdown(self) -> None:
-        """Signal the server to shutdown soon.
+        """
+        Signal the server to shutdown soon.
 
-        Called by host service `host:kill`. It is safe to call multiple times.
+        It is safe to call multiple times.
         """
         self._stopping.set()
         # If we're not in serve_forever context, also proactively stop the server
@@ -86,7 +88,7 @@ class AdbServer:
         session = SmartSocketSession(
             reader=reader,
             writer=writer,
-            host_services=self._host_services,
+            app=self._app,
             device_manager=self._device_manager,
         )
         try:

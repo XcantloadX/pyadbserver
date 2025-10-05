@@ -1,7 +1,11 @@
 import asyncio
 import logging
-from typing import overload, Optional
+from typing import overload, Optional, TYPE_CHECKING
 from dataclasses import dataclass
+
+if TYPE_CHECKING:
+    from .routing import App
+    from ..transport.device_manager import SingleDeviceManager as DeviceManager
 
 logger = logging.getLogger(__name__)
 
@@ -13,10 +17,17 @@ class SessionState:
 class SmartSocketSession:
     """One TCP client connection handling ADB smart-socket framed requests."""
 
-    def __init__(self, *, reader: asyncio.StreamReader, writer: asyncio.StreamWriter, host_services, device_manager) -> None:
+    def __init__(
+        self,
+        *,
+        reader: asyncio.StreamReader,
+        writer: asyncio.StreamWriter,
+        app: 'App',
+        device_manager: 'DeviceManager',
+    ) -> None:
         self._reader = reader
         self._writer = writer
-        self._host_services = host_services
+        self._app = app
         self._device_manager = device_manager
         self._state = SessionState()
 
@@ -30,7 +41,8 @@ class SmartSocketSession:
                 pass
 
     async def run(self) -> None:
-        # adb server 采用短连接，每次请求结束后必须立即关闭连接，不可以循环处理请求
+        # adb server uses short TCP connection
+        # so no need to loop here
         try:
             length_hex = await self._read(4)
         except asyncio.IncompleteReadError:
@@ -53,11 +65,7 @@ class SmartSocketSession:
             await self._send_fail(b"truncated payload")
             return
 
-        # Route
-        if payload.startswith(b"host:"):
-            await self._host_services.handle(payload.decode("utf-8", errors="replace"), self)
-        else:
-            await self._send_fail(b"unsupported service")
+        await self._app.dispatch(payload.decode("utf-8", errors="replace"), self)
 
     # Response helpers
 
