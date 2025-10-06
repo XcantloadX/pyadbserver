@@ -5,7 +5,7 @@ from dataclasses import dataclass
 
 if TYPE_CHECKING:
     from .routing import App
-    from ..transport.device_manager import SingleDeviceManager as DeviceManager
+    from ..transport.device_manager import DeviceService
 
 logger = logging.getLogger(__name__)
 
@@ -22,23 +22,12 @@ class SmartSocketSession:
         *,
         reader: asyncio.StreamReader,
         writer: asyncio.StreamWriter,
-        app: 'App',
-        device_manager: 'DeviceManager',
+        app: 'App'
     ) -> None:
         self._reader = reader
         self._writer = writer
         self._app = app
-        self._device_manager = device_manager
         self._state = SessionState()
-
-        # In single-device mode, preselect the only device if present
-        selected = self._device_manager.get_selected("session")
-        if selected is None:
-            try:
-                self._device_manager.select_device("session", serial=None)
-            except Exception:
-                # No device available yet; keep None
-                pass
 
     async def run(self) -> None:
         # adb server uses short TCP connection

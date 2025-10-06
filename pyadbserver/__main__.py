@@ -6,6 +6,10 @@ import argparse
 import contextlib
 
 from .server import AdbServer
+from .server.routing import App
+from .server.default_api import DefaultAPI
+from .transport.device_manager import SingleDeviceService
+from .transport.device import Device
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +27,20 @@ def parse_args() -> argparse.Namespace:
 
 
 async def _run_server(host: str, port: int) -> None:
-    server = AdbServer(host=host, port=port)
+    app = App()
+    device_manager = SingleDeviceService(device=Device(
+        id="device-1",
+        serial="fake-5554",
+        state="device",
+        properties={
+            "product": "pyadbserver_product",
+            "model": "pyadbserver_model",
+            "device": "pyadbserver_device",
+            "transport_id": "1",
+        },
+    ))
+    server = AdbServer(host=host, port=port, app=app)
+    app.register(DefaultAPI(server, device_manager))
     await server.start()
     logger.info(f"pyadbserver listening on {host}:{server.bound_port}")
 
