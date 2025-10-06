@@ -187,6 +187,14 @@ Exec服务 - 类似shell但传统上使用raw PTY模式。
 
 ---
 
+### sync:
+
+ADB 文件同步协议入口。发送 `sync:` 后，服务端返回 `OKAY` 并进入二进制同步模式，支持 LIST/STAT/RECV/SEND/QUIT（v1）。
+
+详见 `docs/SYNC.md`。
+
+---
+
 ## 四种Shell模式对照表
 
 根据ADB官方实现，shell服务支持四种组合：

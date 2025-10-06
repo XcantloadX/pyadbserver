@@ -2,6 +2,7 @@ import asyncio
 import logging
 from typing import overload, Optional, TYPE_CHECKING
 from dataclasses import dataclass
+from contextlib import contextmanager
 
 from .routing import ResponseAction
 
@@ -29,6 +30,7 @@ class SmartSocketSession:
         self._writer = writer
         self._app = app
         self._state = SessionState()
+        self.enable_log = True
 
     async def run(self) -> None:
         # adb server uses short TCP connection by default
@@ -95,9 +97,19 @@ class SmartSocketSession:
         if flush:
             await self._flush()
 
+    @contextmanager
+    def suppress_log(self):
+        old_value = self.enable_log
+        self.enable_log = False
+        try:
+            yield
+        finally:
+            self.enable_log = old_value
+
     async def _read(self, length: int) -> bytes:
         data = await self._reader.readexactly(length)
-        logger.debug(f"Recv: {data!r}")
+        if self.enable_log:
+            logger.debug(f"Recv: {data!r}")
         return data
 
     def write(self, data: bytes) -> None:
@@ -107,8 +119,10 @@ class SmartSocketSession:
         Usually you should use `send_okay` or `send_fail` instead.
         """
         self._writer.write(data)
-        logger.debug(f"Send: {data!r}")
+        if self.enable_log:
+            logger.debug(f"Send: {data!r}")
 
     async def _flush(self) -> None:
         await self._writer.drain()
-        logger.debug(f"Flush")
+        if self.enable_log:
+            logger.debug(f"Flush")
