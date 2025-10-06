@@ -7,7 +7,8 @@ import contextlib
 
 from .server import AdbServer
 from .server.routing import App
-from .server.default_api import DefaultAPI
+from .server.default_api import HostService
+from .services import LocalShellService
 from .transport.device_manager import SingleDeviceService
 from .transport.device import Device
 
@@ -40,7 +41,7 @@ async def _run_server(host: str, port: int) -> None:
         },
     ))
     server = AdbServer(host=host, port=port, app=app)
-    app.register(DefaultAPI(server, device_manager))
+    app.register(HostService(server, device_manager))
     await server.start()
     logger.info(f"pyadbserver listening on {host}:{server.bound_port}")
 

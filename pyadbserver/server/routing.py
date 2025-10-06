@@ -3,6 +3,7 @@ from __future__ import annotations
 import inspect
 import contextvars
 from dataclasses import dataclass
+from enum import Enum, auto
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -12,20 +13,44 @@ if TYPE_CHECKING:
 g_session: contextvars.ContextVar["SmartSocketSession"] = contextvars.ContextVar("current_session")
 
 
+# Response action -------------------------------------------------------
+
+class ResponseAction(Enum):
+    CLOSE = auto()
+    KEEP_ALIVE = auto()
+
+
 # Response primitives -------------------------------------------------------
 
 @dataclass
 class Response:
     kind: str
     data: Optional[bytes] = None
+    action: ResponseAction = ResponseAction.CLOSE
+    raw: bool = False
 
 
-def OK(data: Optional[bytes] = None) -> Response:
-    return Response("OK", data)
+def OK(data: Optional[bytes] = None, raw: bool = False, action: ResponseAction = ResponseAction.CLOSE) -> Response:
+    """
+    Sends an OK response with optional data.
+    """
+    return Response("OK", data, action, raw)
 
 
-def FAIL(reason: Union[str, bytes]) -> Response:
-    return Response("FAIL", reason.encode("utf-8") if isinstance(reason, str) else reason)
+def FAIL(reason: Union[str, bytes], action: ResponseAction = ResponseAction.CLOSE, raw: bool = False) -> Response:
+    """
+    Sends a FAIL response with an optional reason.
+    """
+    return Response("FAIL", reason.encode("utf-8") if isinstance(reason, str) else reason, action, raw)
+
+
+def NOOP(action: ResponseAction = ResponseAction.CLOSE, raw: bool = False) -> Response:
+    """
+    Sends nothing.
+
+    This is useful when you need a custom response that does not follow the OK/FAIL pattern.
+    """
+    return Response("NOOP", None, action, raw)
 
 
 # Route registration --------------------------------------------------------
@@ -95,11 +120,11 @@ class App:
             if pattern is not None:
                 self._router.add_route(pattern, fn)
 
-    async def dispatch(self, payload: str, session: 'SmartSocketSession') -> None:
+    async def dispatch(self, payload: str, session: 'SmartSocketSession') -> ResponseAction:
         handler, params = self._router.match(payload)
         if handler is None:
-            await session._send_fail(b"unknown host service")
-            return
+            await session.send_fail(b"unsupported operation")
+            return ResponseAction.CLOSE
 
         try:
             token = g_session.set(session)
@@ -108,17 +133,23 @@ class App:
             finally:
                 g_session.reset(token)
         except Exception:
-            await session._send_fail(b"internal error")
-            return
+            await session.send_fail(b"internal error")
+            return ResponseAction.CLOSE
 
         if result is None:
             # default to OK without body
             await session.send_okay()
-            return
+            return ResponseAction.CLOSE
         if result.kind == "OK":
-            await session.send_okay(result.data or b"")
+            await session.send_okay(data=result.data or b"", raw=result.raw)
+        elif result.kind == "FAIL":
+            await session.send_fail(result.data or b"unknown error", raw=result.raw)
+        elif result.kind == "NOOP":
+            pass
         else:
-            await session._send_fail(result.data or b"unknown error")
+            raise ValueError(f"unknown response kind: {result.kind}")
+        
+        return result.action
 
 
 # Method decorator usable before App exists ---------------------------------

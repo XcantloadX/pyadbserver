@@ -1,10 +1,9 @@
 import asyncio
 import logging
-from typing import Optional, Callable
+from typing import Optional
 
-from .session import SmartSocketSession
-from .default_api import DefaultAPI
 from .routing import App
+from .session import SmartSocketSession
 
 logger = logging.getLogger(__name__)
 
