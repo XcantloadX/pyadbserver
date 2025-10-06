@@ -42,6 +42,7 @@ async def _run_server(host: str, port: int) -> None:
     ))
     server = AdbServer(host=host, port=port, app=app)
     app.register(HostService(server, device_manager))
+    app.register(LocalShellService())
     await server.start()
     logger.info(f"pyadbserver listening on {host}:{server.bound_port}")
 
