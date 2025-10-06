@@ -1,29 +1,7 @@
 # pyadbserver
+Pyadbserver is a Python implementation of ADB server. It is currently a minimal implementation of the ADB server, and still in development.
 
-Python 实现的最小 ADB host 侧 smart-socket 服务器。M0 提供：
-- `host:version`（返回文本版本号）
-- `host:kill`（回复 OKAY 后优雅关闭）
-
-本地运行（PowerShell 示例）：
-
-```powershell
-# 作为模块启动（读取 $env:ADB_SERVER_PORT 或使用 --port）
-py -m pyadbserver --host 127.0.0.1 --port 5038
-
-# 或运行仓库根的入口脚本
-py -3 .\main.py
-
-# 运行测试
-uv run python -m unittest discover -s pyadbserver/tests -p 'test_*.py' -v
-```
-
-或直接运行某个测试：
-
-```powershell
-uv run python -m unittest tests.test_m0
-```
-
-### 模块与类交互示意
+## Structure
 
 ```mermaid
 flowchart TD
@@ -51,79 +29,111 @@ flowchart TD
 ```
 
 
-### 自定义 API（Flask 风格路由）
+## Quick Start
+### Basic
+Pyadbserver writes like a Flask app.
 
-- **基本概念**
-  - 使用 `App` 管理路由；`@route("pattern")` 装饰器为函数或类方法注册路由。
-  - 路由模式按冒号分段，支持占位符 `<name>`，例如：`host-serial:<serial>:kill`。
-  - 处理器返回 `OK()` 或 `OK(b"body")`、`FAIL("reason")`。返回 `None` 视为 `OK()`。
-  - 当前会话 `session` 通过全局魔术变量 `g_session` 获取（无需作为参数传入）。
-
-- **函数式路由**
 ```python
-from pyadbserver.server import App, AdbServer, route, OK
-
-app = App()
-
-@app.route("host:ping")
-async def ping():
-    return OK(b"pong")
-
-server = AdbServer(app=app)
-await server.start()
-```
-
-- **类方法路由（带状态）**
-```python
-from pyadbserver.server import App, AdbServer, route, OK
-
-app = App()
-
-class MyAPI:
-    def __init__(self, server: AdbServer) -> None:
-        self._server = server
-
-    @route("host:kill-soft")
-    async def kill_soft(self):
-        self._server.request_shutdown()
-        return OK()
-
-server = AdbServer(app=app)
-app.register(MyAPI(server))
-await server.start()
-```
-
-- **带参数的路由**
-```python
+import asyncio
 from pyadbserver.server import App, AdbServer, OK
 
 app = App()
 
-@app.route("host-serial:<serial>:kill")
-async def kill_by_serial(serial: str):
-    # 根据 serial 进行处理
-    return OK()
+# You need to change the version to match your adb client,
+# or you will get:
+# adb server version (42) doesn't match this client (41); killing...
+MY_ADB_VERSION = 41
 
-server = AdbServer(app=app)
-await server.start()
+@app.route('host:version')
+async def version():
+    return OK(f'{MY_ADB_VERSION:04x}'.encode('ascii'))
+
+@app.route('host:devices')
+async def devices():
+    return OK(b'my-fake-device\tdevice\n')
+
+server = AdbServer(app=app, port=5000) # Specify port to avoid conflict with default port 5037
+
+async def main():
+    await server.start()
+    await server.serve_forever()
+
+asyncio.run(main())
 ```
 
-- **访问当前会话**
+```powershell
+# Assume you are using PowerShell here
+# Shell 1
+(pyadbserver) PS E:\GithubRepos\pyadbserver> python examples/basic.py
+Server started on port 5000
+
+# Shell 2
+PS C:\Users\User> $env:ANDROID_ADB_SERVER_PORT=5000
+PS C:\Users\User> adb devices
+List of devices attached
+my-fake-device  device
+```
+
+### Class Handler
 ```python
-from pyadbserver.server import App, AdbServer, route, OK, g_session
+import asyncio
+from pyadbserver.server import App, AdbServer, route, OK
+
+MY_ADB_VERSION = 41
 
 app = App()
 
-@app.route("host:whoami")
-async def whoami():
-    session = g_session.get()
-    # 仅作示例：返回固定内容；你也可以基于 session 做更复杂逻辑
-    return OK(b"server")
+class MyDeviceService:
+    def __init__(self) -> None:
+        self._devices: list[tuple[str, str]] = []
 
-server = AdbServer(app=app)
-await server.start()
+    # This route is always required
+    @route('host:version')
+    async def version(self):
+        return OK(f'{MY_ADB_VERSION:04x}'.encode('ascii'))
+
+    @route('host:devices')
+    async def devices(self):
+        lines = [f'{d[0]}\t{d[1]}' for d in self._devices]
+        response = '\n'.join(lines)
+        if response:
+            response += '\n'
+        return OK(response.encode('ascii'))
+    
+    def connect(self, serial: str, state: str):
+        self._devices.append((serial, state))
+    
+    def disconnect(self, serial: str):
+        self._devices = [d for d in self._devices if d[0] != serial]
+
+device_service = MyDeviceService()
+device_service.connect('my-fake-device', 'device')
+device_service.connect('my-fake-device-2', 'recovery')
+device_service.connect('my-fake-device-3', 'unauthorized')
+app.register(device_service)
+
+server = AdbServer(app=app, port=5000)
+async def main():
+    await server.start()
+    print(f"Server started on port {server.bound_port}")
+    await server.serve_forever()
+
+asyncio.run(main())
 ```
 
-- **默认路由与覆盖**
-  - 内置 `host:version` 与 `host:kill`，由 `DefaultAPI` 提供。
-  - 如需覆盖，推荐先创建并注册自己的 `App` 路由，再将该 `app` 传给 `AdbServer(app=app)`，你的路由会优先生效。
+```powershell
+# Assume you are using PowerShell here
+# Shell 1
+(pyadbserver) PS E:\GithubRepos\pyadbserver> python examples/class_handler.py
+Server started on port 5000
+
+# Shell 2
+PS C:\Users\User> $env:ANDROID_ADB_SERVER_PORT=5000
+PS C:\Users\User> adb devices
+List of devices attached
+my-fake-device  device
+my-fake-device-2        recovery
+my-fake-device-3        unauthorized
+
+PS C:\Users\User>
+```

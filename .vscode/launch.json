@@ -5,11 +5,21 @@
     "version": "0.2.0",
     "configurations": [
         {
+            "name": "Python Debugger: Current File",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal"
+        },
+        {
             "name": "Start pyadbserver",
             "type": "debugpy",
             "request": "launch",
             "module": "pyadbserver",
-            "args": ["--port", "5000"]
+            "args": [
+                "--port",
+                "5000"
+            ]
         }
     ]
 }

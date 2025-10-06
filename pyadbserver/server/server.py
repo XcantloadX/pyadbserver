@@ -25,7 +25,7 @@ class AdbServer:
         self._host = host
         self._port = port
         self._server: Optional[asyncio.AbstractServer] = None
-        self._stopping = asyncio.Event()
+        self._stopping: Optional[asyncio.Event] = None
         self._app = app
         self._app.register(app)
 
@@ -44,6 +44,10 @@ class AdbServer:
         if self._server is not None:
             return
 
+        # Create the event in the running event loop
+        if self._stopping is None:
+            self._stopping = asyncio.Event()
+
         self._server = await asyncio.start_server(
             self._handle_client, self._host, self._port
         )
@@ -53,11 +57,13 @@ class AdbServer:
             await self.start()
 
         assert self._server is not None
+        assert self._stopping is not None
         async with self._server:
             await self._stopping.wait()
 
     async def stop(self) -> None:
-        self._stopping.set()
+        if self._stopping is not None:
+            self._stopping.set()
         if self._server is not None:
             self._server.close()
             await self._server.wait_closed()
@@ -69,7 +75,8 @@ class AdbServer:
 
         It is safe to call multiple times.
         """
-        self._stopping.set()
+        if self._stopping is not None:
+            self._stopping.set()
         # If we're not in serve_forever context, also proactively stop the server
         if self._server is not None:
             try:

@@ -1,9 +1,9 @@
 from typing import TYPE_CHECKING
 
 from .. import DEFAULT_SERVER_VERSION
-from .routing import NOOP, ResponseAction, g_session, route, OK
+from ..server.routing import NOOP, ResponseAction, g_session, route, OK
 if TYPE_CHECKING:
-    from .adb_server import AdbServer
+    from ..server import AdbServer
     from ..transport.device_manager import DeviceService
 
 

@@ -9,18 +9,10 @@ from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union,
 if TYPE_CHECKING:
     from .session import SmartSocketSession
 
-# global magic session context
-g_session: contextvars.ContextVar["SmartSocketSession"] = contextvars.ContextVar("current_session")
-
-
-# Response action -------------------------------------------------------
-
 class ResponseAction(Enum):
     CLOSE = auto()
     KEEP_ALIVE = auto()
 
-
-# Response primitives -------------------------------------------------------
 
 @dataclass
 class Response:
@@ -29,6 +21,9 @@ class Response:
     action: ResponseAction = ResponseAction.CLOSE
     raw: bool = False
 
+
+g_session: contextvars.ContextVar["SmartSocketSession"] = contextvars.ContextVar("current_session")
+Handler = Callable[..., Union[Awaitable[Response], Response, None]]
 
 def OK(data: Optional[bytes] = None, raw: bool = False, action: ResponseAction = ResponseAction.CLOSE) -> Response:
     """
@@ -51,12 +46,6 @@ def NOOP(action: ResponseAction = ResponseAction.CLOSE, raw: bool = False) -> Re
     This is useful when you need a custom response that does not follow the OK/FAIL pattern.
     """
     return Response("NOOP", None, action, raw)
-
-
-# Route registration --------------------------------------------------------
-
-Handler = Callable[..., Union[Awaitable[Response], Response, None]]
-
 
 def _ensure_awaitable(result: Union[Response, None, Awaitable[Response]]) -> Awaitable[Optional[Response]]:
     if inspect.isawaitable(result):
@@ -104,13 +93,23 @@ class App:
 
     # decorator sugar
     def route(self, pattern: str) -> Callable[[Handler], Handler]:
+        """
+        Register a handler for a given pattern.
+
+        :param pattern: The pattern to register the handler for.
+        :return: The decorator function.
+        """
         def _decorator(func: Handler) -> Handler:
             self._router.add_route(pattern, func)
             return func
         return _decorator
 
     def register(self, obj: Any) -> None:
-        # register instance methods with @route decorator
+        """
+        Register all methods decorated with @route decorator of an object.
+
+        :param obj: The object to register the methods for.
+        """
         for name in dir(obj):
             fn = getattr(obj, name)
             pattern = getattr(fn, "__route_pattern__", None)
@@ -121,6 +120,13 @@ class App:
                 self._router.add_route(pattern, fn)
 
     async def dispatch(self, payload: str, session: 'SmartSocketSession') -> ResponseAction:
+        """
+        Dispatch a payload to the appropriate handler.
+
+        :param payload: The payload to dispatch.
+        :param session: The session to dispatch the payload to.
+        :return: The response action.
+        """
         handler, params = self._router.match(payload)
         if handler is None:
             await session.send_fail(b"unsupported operation")
@@ -152,12 +158,8 @@ class App:
         return result.action
 
 
-# Method decorator usable before App exists ---------------------------------
-
 def route(pattern: str) -> Callable[[Handler], Handler]:
     def _decorator(func: Handler) -> Handler:
         setattr(func, "__route_pattern__", pattern)
         return func
     return _decorator
-
-

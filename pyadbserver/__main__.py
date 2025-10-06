@@ -7,7 +7,7 @@ import contextlib
 
 from .server import AdbServer
 from .server.routing import App
-from .server.default_api import HostService
+from .services.host import HostService
 from .services import LocalShellService
 from .transport.device_manager import SingleDeviceService
 from .transport.device import Device

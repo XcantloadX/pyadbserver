@@ -7,7 +7,6 @@ from .routing import ResponseAction
 
 if TYPE_CHECKING:
     from .routing import App
-    from ..transport.device_manager import DeviceService
 
 logger = logging.getLogger(__name__)
 
