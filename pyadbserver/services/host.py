@@ -1,7 +1,7 @@
 from typing import TYPE_CHECKING
 
 from .. import DEFAULT_SERVER_VERSION
-from ..server.routing import NOOP, ResponseAction, g_session, route, device_route, OK
+from ..server.routing import NOOP, ResponseAction, g_session, route, device_route, OK, FAIL
 if TYPE_CHECKING:
     from ..server import AdbServer
     from ..transport.device_manager import DeviceService
@@ -101,3 +101,48 @@ class HostService:
         session = g_session.get()
         self._device_manager.select_device(session.id)
         return await self._send_transport(2)
+
+    ########## host:transport* (ADB Compatible) ##########
+    @route("host:transport:<serial>")
+    async def host_transport_serial(self, serial: str):
+        """
+        Switch to device with specified serial number.
+        """
+        session = g_session.get()
+        device = self._device_manager.get_device(serial)
+        if device is None:
+            return FAIL(f"device '{serial}' not found")
+        try:
+            self._device_manager.select_device(session.id, serial=serial)
+        except Exception:
+            return FAIL(f"device '{serial}' not found")
+        return OK(action=ResponseAction.KEEP_ALIVE)
+
+    @route("host:transport-any")
+    async def host_transport_any(self):
+        """
+        Switch to any device.
+
+        - 0 devices: FAIL "no devices/emulators found"
+        - More than 1 device: FAIL "more than one device/emulator"
+        - Exactly 1 device: OKAY (KEEP_ALIVE)
+        """
+        devices = self._device_manager.list_devices()
+        if not devices:
+            return FAIL("no devices/emulators found")
+        if len(devices) > 1:
+            return FAIL("more than one device/emulator")
+        session = g_session.get()
+        try:
+            self._device_manager.select_device(session.id)
+        except Exception:
+            return FAIL("no devices/emulators found")
+        return OK(action=ResponseAction.KEEP_ALIVE)
+
+    @route("host:transport-usb")
+    def host_transport_usb(self):
+        return self.host_transport_any()
+
+    @route("host:transport-local")
+    def host_transport_local(self):
+        return self.host_transport_any()
