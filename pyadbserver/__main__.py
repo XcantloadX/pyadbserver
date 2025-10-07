@@ -5,7 +5,6 @@ import asyncio
 import argparse
 import contextlib
 
-from pyadbserver.services.fs import MemoryFileSystem
 
 from .server import AdbServer
 from .server.routing import App
@@ -13,7 +12,7 @@ from .services.host import HostService
 from .services import LocalShellService
 from .transport.device_manager import SingleDeviceService
 from .transport.device import Device
-from .services import SyncV1Service
+from .services import SyncV1Service, ForwardService, MemoryFileSystem
 
 logger = logging.getLogger(__name__)
 
@@ -47,6 +46,7 @@ async def _run_server(host: str, port: int) -> None:
     app.register(HostService(server, device_manager))
     app.register(LocalShellService())
     app.register(SyncV1Service(MemoryFileSystem(auto_create=True)))
+    app.register(ForwardService(device_manager))
     await server.start()
     logger.info(f"pyadbserver listening on {host}:{server.bound_port}")
 
