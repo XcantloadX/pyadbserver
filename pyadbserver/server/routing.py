@@ -225,7 +225,7 @@ class App:
         
         route, params = self._router.match(payload)
         if route is None:
-            await session.send_fail(b"unsupported operation")
+            await session.send_fail(b"unsupported operation for payload: " + payload.encode("utf-8"))
             return ResponseAction.CLOSE
 
         handler = route.handler
