@@ -6,7 +6,8 @@ import struct
 from typing import TYPE_CHECKING
 import logging
 
-from ..server.routing import route, NOOP, ResponseAction, g_session
+from ..server.routing import device_route, route, NOOP, ResponseAction, g_session
+from ..transport.device import Device
 from .fs import AbstractFileSystem, LocalFileSystem, FileStat, Dirent
 
 if TYPE_CHECKING:
@@ -47,8 +48,8 @@ class SyncV1Service:
     def __init__(self, fs: AbstractFileSystem) -> None:
         self._fs = fs
 
-    @route("sync:")
-    async def sync_entry(self):
+    @device_route("sync:")
+    async def sync_entry(self, device: "Device"):
         session = g_session.get()
         # Accept and enter sync loop
         await session.send_okay(flush=True)

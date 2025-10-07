@@ -7,7 +7,7 @@ import sys
 from typing import Tuple, TYPE_CHECKING
 from enum import IntEnum
 
-from ..server.routing import FAIL, route, NOOP, ResponseAction, g_session
+from ..server.routing import FAIL, device_route, route, NOOP, ResponseAction, g_session
 
 if TYPE_CHECKING:
     from ..server.session import SmartSocketSession
@@ -50,25 +50,25 @@ class LocalShellService:
     - exec commands (raw mode)
     """
 
-    @route("shell:")
+    @device_route("shell:")
     async def shell_interactive(self):
         return FAIL("interactive shell is not supported")
 
-    @route("shell:<cmd>")
+    @device_route("shell:<cmd>")
     async def shell_run(self, cmd: str):
         """Non-interactive shell command (without protocol)"""
         return await self._run_shell_command(cmd, use_protocol=False, use_pty=False)
 
-    @route("shell,v2:")
+    @device_route("shell,v2:")
     async def shell_v2_interactive(self):
         return FAIL("interactive shellv2 is not supported")
 
-    @route("shell,v2:<cmd>")
+    @device_route("shell,v2:<cmd>")
     async def shell_v2_run(self, cmd: str):
         """Non-interactive shell command (using shell protocol v2)"""
         return await self._run_shell_command(cmd, use_protocol=True, use_pty=False)
 
-    @route("exec:<cmd>")
+    @device_route("exec:<cmd>")
     async def exec_run(self, cmd: str):
         return FAIL("exec command is not supported")
 
