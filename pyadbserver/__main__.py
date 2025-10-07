@@ -46,7 +46,7 @@ async def _run_server(host: str, port: int) -> None:
     app.register(HostService(server, device_manager))
     app.register(LocalShellService())
     app.register(SyncV1Service(MemoryFileSystem(auto_create=True)))
-    app.register(ForwardService(device_manager))
+    app.register(ForwardService())
     await server.start()
     logger.info(f"pyadbserver listening on {host}:{server.bound_port}")
 

@@ -13,7 +13,7 @@ from pyadbserver.transport.device_manager import SingleDeviceService
 class TestForwardService(AdbServerTestCase):
     def get_services(self, device_manager: SingleDeviceService) -> List[Any]:
         """Register the ForwardService."""
-        return [ForwardService(device_manager)]
+        return [ForwardService()]
     
     async def test_list_empty_forwards(self):
         """Test listing forwards when none are set."""

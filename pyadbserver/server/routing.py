@@ -7,6 +7,7 @@ import contextvars
 from enum import Enum, auto
 from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
+import warnings
 
 if TYPE_CHECKING:
     from .session import SmartSocketSession
@@ -224,6 +225,15 @@ class App:
                 return ResponseAction.CLOSE
         
         route, params = self._router.match(payload)
+        if route is None and payload.startswith("host:"):
+            # Fallback: allow routes defined without the 'host:' prefix to match
+            warnings.warn(
+                "Some route does not start with 'host:', falling back to match without 'host:' prefix. "
+                "This will only show once. "
+                "Enable logging to see more details."
+            )
+            logger.warning(f"Route '{payload}' does not start with 'host:', falling back to match without 'host:' prefix")
+            route, params = self._router.match(payload[len("host:"):])
         if route is None:
             await session.send_fail(b"unsupported operation for payload: " + payload.encode("utf-8"))
             return ResponseAction.CLOSE
