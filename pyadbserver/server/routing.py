@@ -5,11 +5,14 @@ import logging
 import inspect
 import contextvars
 from enum import Enum, auto
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Awaitable, Callable, Dict, List, Optional, Tuple, Union, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .session import SmartSocketSession
+    from ..transport.device import Device
+    from ..transport.device_manager import DeviceService
+
 
 class ResponseAction(Enum):
     CLOSE = auto()
@@ -26,6 +29,15 @@ class Response:
 logger = logging.getLogger(__name__)
 g_session: contextvars.ContextVar["SmartSocketSession"] = contextvars.ContextVar("current_session")
 Handler = Callable[..., Union[Awaitable[Response], Response, None]]
+
+
+@dataclass
+class Route:
+    pattern: str
+    handler: Callable[..., Awaitable[Optional[Response]]]
+    is_device_route: bool = False
+    prefix_only: bool = False
+
 
 def OK(data: Optional[bytes] = None, raw: bool = False, action: ResponseAction = ResponseAction.CLOSE) -> Response:
     """
@@ -59,20 +71,20 @@ def _ensure_awaitable(result: Union[Response, None, Awaitable[Response]]) -> Awa
 
 class Router:
     def __init__(self) -> None:
-        self._routes: List[Tuple[str, Callable[..., Awaitable[Optional[Response]]]]] = []
+        self._routes: List[Route] = []
 
-    def add_route(self, pattern: str, handler: Handler) -> None:
+    def add_route(self, pattern: str, handler: Handler, is_device_route: bool = False, prefix_only: bool = False) -> None:
         async def _handler(*args: Any, **kwargs: Any) -> Optional[Response]:
             return await _ensure_awaitable(handler(*args, **kwargs))
-        self._routes.append((pattern, _handler))
+        self._routes.append(Route(pattern, _handler, is_device_route, prefix_only))
 
-    def match(self, payload: str) -> Tuple[Optional[Callable[..., Awaitable[Optional[Response]]]], Dict[str, str]]:
+    def match(self, payload: str) -> Tuple[Optional[Route], Dict[str, str]]:
         # Sort routes by pattern length (descending) to match more specific patterns first
-        sorted_routes = sorted(self._routes, key=lambda r: len(r[0]), reverse=True)
-        for pattern, handler in sorted_routes:
-            ok, params = self._match_pattern(pattern, payload)
+        sorted_routes = sorted(self._routes, key=lambda r: len(r.pattern), reverse=True)
+        for route in sorted_routes:
+            ok, params = self._match_pattern(route.pattern, payload)
             if ok:
-                return handler, params
+                return route, params
         return None, {}
 
     @staticmethod
@@ -142,8 +154,9 @@ class Router:
 
 
 class App:
-    def __init__(self) -> None:
+    def __init__(self, *, device_manager: "DeviceService") -> None:
         self._router = Router()
+        self._device_manager = device_manager
 
     # decorator sugar
     def route(self, pattern: str) -> Callable[[Handler], Handler]:
@@ -158,6 +171,19 @@ class App:
             return func
         return _decorator
 
+    def device_route(self, pattern: str, *, prefix_only: bool = False) -> Callable[[Handler], Handler]:
+        """
+        Register a handler for a given pattern that requires a device.
+
+        :param pattern: The pattern to register the handler for.
+        :param prefix_only: If True, the handler will only be called if a device is specified via "host-serial"
+        :return: The decorator function.
+        """
+        def _decorator(func: Handler) -> Handler:
+            self._router.add_route(pattern, func, is_device_route=True, prefix_only=prefix_only)
+            return func
+        return _decorator
+
     def register(self, obj: Any) -> None:
         """
         Register all methods decorated with @route decorator of an object.
@@ -166,12 +192,17 @@ class App:
         """
         for name in dir(obj):
             fn = getattr(obj, name)
-            pattern = getattr(fn, "__route_pattern__", None)
-            if pattern is None and hasattr(fn, "__func__"):
-                # bound method -> check underlying function
-                pattern = getattr(getattr(fn, "__func__"), "__route_pattern__", None)
+
+            attr_source = fn
+            if hasattr(attr_source, "__func__"):
+                attr_source = attr_source.__func__
+
+            pattern = getattr(attr_source, "__route_pattern__", None)
+            is_device_route = getattr(attr_source, "__is_device_route__", False)
+            prefix_only = getattr(attr_source, "__prefix_only__", False)
+
             if pattern is not None:
-                self._router.add_route(pattern, fn)
+                self._router.add_route(pattern, fn, is_device_route=is_device_route, prefix_only=prefix_only)
 
     async def dispatch(self, payload: str, session: 'SmartSocketSession') -> ResponseAction:
         """
@@ -181,15 +212,51 @@ class App:
         :param session: The session to dispatch the payload to.
         :return: The response action.
         """
-        handler, params = self._router.match(payload)
-        if handler is None:
+        device: Optional["Device"] = None
+        
+        # host-serial:<serial>:<request>
+        match = re.match(r"host-serial:([^:]+):(.+)", payload)
+        if match:
+            serial, payload = match.groups()
+            device = self._device_manager.get_device(serial)
+            if device is None:
+                await session.send_fail(f"device '{serial}' not found".encode("utf-8"))
+                return ResponseAction.CLOSE
+        
+        route, params = self._router.match(payload)
+        if route is None:
             await session.send_fail(b"unsupported operation")
             return ResponseAction.CLOSE
+
+        handler = route.handler
+        handler_args: List[Any] = []
+        
+        if route.is_device_route:
+            if device is None:
+                device = self._device_manager.get_selected(session.id)
+            
+            if device is None:
+                # device_route() should select any device if not selected
+                # but device_route(prefix_only=True) should fail.
+                if not route.prefix_only:
+                    # Try to select any device
+                    devices = self._device_manager.list_devices()
+                    if devices:
+                        device = devices[0] # Select first one
+                else:
+                    await session.send_fail(b"no device specified for device-only command")
+                    return ResponseAction.CLOSE
+            
+            if device is None:
+                await session.send_fail(b"no device available")
+                return ResponseAction.CLOSE
+            
+            handler_args.append(device)
 
         try:
             token = g_session.set(session)
             try:
-                result = await handler(**params)
+                result = await handler(*handler_args, **params)
             finally:
                 g_session.reset(token)
         except Exception:
@@ -216,5 +283,15 @@ class App:
 def route(pattern: str) -> Callable[[Handler], Handler]:
     def _decorator(func: Handler) -> Handler:
         setattr(func, "__route_pattern__", pattern)
+        setattr(func, "__is_device_route__", False)
+        return func
+    return _decorator
+
+
+def device_route(pattern: str, *, prefix_only: bool = False) -> Callable[[Handler], Handler]:
+    def _decorator(func: Handler) -> Handler:
+        setattr(func, "__route_pattern__", pattern)
+        setattr(func, "__is_device_route__", True)
+        setattr(func, "__prefix_only__", prefix_only)
         return func
     return _decorator

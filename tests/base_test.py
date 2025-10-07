@@ -59,8 +59,6 @@ class AdbServerTestCase(unittest.IsolatedAsyncioTestCase):
 
     async def start_server(self):
         """Starts an ADB server with the services from get_services()."""
-        app = App()
-        
         device_manager = SingleDeviceService(device=Device(
             id="test-device",
             serial="test-5554",
@@ -71,7 +69,9 @@ class AdbServerTestCase(unittest.IsolatedAsyncioTestCase):
                 "device": "test_device",
                 "transport_id": "1",
             },
+            features=[b"shell_v2", b"cmd", b"stat_v2", b"ls_v2", b"fixed_push_mkdir", b"apex", b"abb", b"fixed_push_symlink_timestamp", b"abb_exec", b"remount_shell", b"track_app", b"sendrecv_v2", b"sendrecv_v2_brotli", b"sendrecv_v2_lz4", b"sendrecv_v2_zstd", b"sendrecv_v2_dry_run_send"],
         ))
+        app = App(device_manager=device_manager)
         
         server = AdbServer(app=app, port=0)
         

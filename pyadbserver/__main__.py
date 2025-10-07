@@ -30,7 +30,6 @@ def parse_args() -> argparse.Namespace:
 
 
 async def _run_server(host: str, port: int) -> None:
-    app = App()
     device_manager = SingleDeviceService(device=Device(
         id="device-1",
         serial="fake-5554",
@@ -42,6 +41,7 @@ async def _run_server(host: str, port: int) -> None:
             "transport_id": "1",
         },
     ))
+    app = App(device_manager=device_manager)
     server = AdbServer(host=host, port=port, app=app)
     app.register(HostService(server, device_manager))
     app.register(LocalShellService())

@@ -9,6 +9,9 @@ class DeviceService(Protocol):
     def list_devices(self) -> List[Device]:
         ...
 
+    def get_device(self, serial: str) -> Optional[Device]:
+        ...
+
     def get_selected(self, session_id: str) -> Optional[Device]:
         ...
 
@@ -31,6 +34,11 @@ class SingleDeviceService:
 
     def list_devices(self) -> List[Device]:
         return [self._device] if self._device else []
+
+    def get_device(self, serial: str) -> Optional[Device]:
+        if self._device and self._device.serial == serial:
+            return self._device
+        return None
 
     def get_selected(self, session_id: str) -> Optional[Device]:
         return self._device if session_id in self._selected_sessions else None

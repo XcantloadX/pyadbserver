@@ -1,10 +1,11 @@
 from typing import TYPE_CHECKING
 
 from .. import DEFAULT_SERVER_VERSION
-from ..server.routing import NOOP, ResponseAction, g_session, route, OK
+from ..server.routing import NOOP, ResponseAction, g_session, route, device_route, OK
 if TYPE_CHECKING:
     from ..server import AdbServer
     from ..transport.device_manager import DeviceService
+    from ..transport.device import Device
 
 
 class HostService:
@@ -63,6 +64,13 @@ class HostService:
         """
         return OK(b"shell")
 
+    @device_route("features")
+    async def features_device(self, device: "Device"):
+        """
+        Returns the list of features supported by the device.
+        """
+        return OK(b",".join(device.features))
+
     ########## Transport Commands ##########
     # Before the adb client executes any actual commands (such as shell, install, ...)
     # it will ask the ADB server to switch to a specific device.
@@ -81,7 +89,8 @@ class HostService:
         """
         Switch to a specific device by serial number.
         """
-        self._device_manager.select_device(serial)
+        session = g_session.get()
+        self._device_manager.select_device(session.id, serial=serial)
         return await self._send_transport(1)
 
     @route("host:tport:any")
@@ -89,4 +98,6 @@ class HostService:
         """
         Switch to any device.
         """
+        session = g_session.get()
+        self._device_manager.select_device(session.id)
         return await self._send_transport(2)

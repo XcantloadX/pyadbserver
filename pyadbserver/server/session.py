@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import uuid
 from typing import overload, Optional, TYPE_CHECKING
 from dataclasses import dataclass
 from contextlib import contextmanager
@@ -26,6 +27,7 @@ class SmartSocketSession:
         writer: asyncio.StreamWriter,
         app: 'App'
     ) -> None:
+        self.id = str(uuid.uuid4())
         self._reader = reader
         self._writer = writer
         self._app = app
