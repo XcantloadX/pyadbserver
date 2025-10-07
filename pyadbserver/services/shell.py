@@ -11,6 +11,7 @@ from ..server.routing import FAIL, device_route, route, NOOP, ResponseAction, g_
 
 if TYPE_CHECKING:
     from ..server.session import SmartSocketSession
+    from ..transport.device import Device
 
 
 # Shell Protocol v2 constants
@@ -51,25 +52,25 @@ class LocalShellService:
     """
 
     @device_route("shell:")
-    async def shell_interactive(self):
+    async def shell_interactive(self, device: "Device"):
         return FAIL("interactive shell is not supported")
 
     @device_route("shell:<cmd>")
-    async def shell_run(self, cmd: str):
+    async def shell_run(self, device: "Device", cmd: str):
         """Non-interactive shell command (without protocol)"""
         return await self._run_shell_command(cmd, use_protocol=False, use_pty=False)
 
     @device_route("shell,v2:")
-    async def shell_v2_interactive(self):
+    async def shell_v2_interactive(self, device: "Device"):
         return FAIL("interactive shellv2 is not supported")
 
     @device_route("shell,v2:<cmd>")
-    async def shell_v2_run(self, cmd: str):
+    async def shell_v2_run(self, device: "Device", cmd: str):
         """Non-interactive shell command (using shell protocol v2)"""
         return await self._run_shell_command(cmd, use_protocol=True, use_pty=False)
 
     @device_route("exec:<cmd>")
-    async def exec_run(self, cmd: str):
+    async def exec_run(self, device: "Device", cmd: str):
         return FAIL("exec command is not supported")
 
     # ===== Core Implementation =====
