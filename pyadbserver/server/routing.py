@@ -279,7 +279,7 @@ class App:
             await session.send_okay()
             return ResponseAction.CLOSE
         if result.kind == "OK":
-            await session.send_okay(data=result.data or b"", raw=result.raw)
+            await session.send_okay(data=result.data, raw=result.raw)
         elif result.kind == "FAIL":
             await session.send_fail(result.data or b"unknown error", raw=result.raw)
         elif result.kind == "NOOP":
